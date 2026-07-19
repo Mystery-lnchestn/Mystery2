@@ -37,43 +37,26 @@
     </style>
 </head>
 <body>
-    <!-- BGM：因为mp3和html并列，所以直接写文件名 -->
+    <!-- 1. 音频元素：mp3和当前html并列，直接写文件名 -->
     <audio id="bgm" src="Wolf_Legend.mp3" loop preload="auto"></audio>
 
+    <!-- 2. 游戏DOM -->
     <div id="score">狼群：0 | 骨头：0</div>
     <canvas id="game"></canvas>
 
-    <!-- 关键点1：先加载音频模块 -->
+    <!-- 3. 引入音频逻辑（必须在主逻辑前加载） -->
     <script src="audio.js"></script>
 
-    <!-- 关键点2：主逻辑 -->
+    <!-- 4. 主游戏逻辑 -->
     <script>
-        // ==================== 音频初始化（必须在最前）====================
-        // 调用 audio.js 里的函数
-        initBGM(); 
+        // ==================== 音频初始化 ====================
+        initBGM(); // 调用audio.js里的初始化函数
 
-        // 合并逻辑：点一下屏幕 → 播BGM + 生一只狼，绝不重复
-        function handleTap(e) {
-            e.preventDefault(); // 阻止默认行为，避免touch/click重复触发
-            const rect = canvas.getBoundingClientRect();
-            const x = e.touches ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-            const y = e.touches ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
-            
-            // 1. 播BGM（只播一次）
-            playBGM();
-            // 2. 生一只狼
-            createWolf(x, y);
-        }
-        
-        // 只绑touchstart，iPad触摸足够用，不用再绑click
-        canvas.addEventListener('touchstart', handleTap, { passive: false });
-
-
-        // ==================== 配置 ====================
+        // ==================== 基础配置（保留你之前的参数） ====================
         const CONFIG = {
             GRAVITY: 0.18,
             BOUNCE_FACTOR: 0.7,
-            MIN_BOUNCE_Y: -18, // 我帮你调高了，狼会蹦得更有力
+            MIN_BOUNCE_Y: -18, // 弹跳力度，数值越小跳越高
             MAX_BOUNCE_Y: -8,
             MIN_DX: 1,
             MAX_DX: 4,
@@ -88,62 +71,48 @@
         };
 
         // ==================== 工具函数 ====================
-        function random(min, max) {
-            return Math.random() * (max - min) + min;
-        }
-
-        function isCollide(a, b, sizeA, sizeB) {
-            return (
-                a.x < b.x + sizeB &&
-                a.x + sizeA > b.x &&
-                a.y < b.y + sizeB &&
-                a.y + sizeA > b.y
-            );
-        }
+        const random = (min, max) => Math.random() * (max - min) + min;
+        const isCollide = (a, b, sizeA, sizeB) => (
+            a.x < b.x + sizeB &&
+            a.x + sizeA > b.x &&
+            a.y < b.y + sizeB &&
+            a.y + sizeA > b.y
+        );
 
         // ==================== 粒子系统 ====================
         const particles = [];
-
         function spawnParticles(x, y, color) {
             for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
                 const angle = random(0, Math.PI * 2);
                 const speed = random(1, 3);
                 particles.push({
-                    x: x,
-                    y: y,
+                    x, y,
                     vx: Math.cos(angle) * speed,
                     vy: Math.sin(angle) * speed,
                     life: 0.5,
                     maxLife: 0.5,
                     size: random(2, 4),
-                    color: color
+                    color
                 });
             }
         }
-
-        function updateParticles(deltaTime) {
+        function updateParticles(dt) {
             for (let i = particles.length - 1; i >= 0; i--) {
                 const p = particles[i];
-                p.life -= deltaTime;
-                if (p.life <= 0) {
-                    particles.splice(i, 1);
-                    continue;
-                }
-                p.x += p.vx;
-                p.y += p.vy;
-                p.vx *= 0.95;
-                p.vy *= 0.95;
+                p.life -= dt;
+                if (p.life <= 0) { particles.splice(i, 1); continue; }
+                p.x += p.vx; p.y += p.vy;
+                p.vx *= 0.95; p.vy *= 0.95;
             }
         }
-
         function drawParticles(ctx) {
-            for (const p of particles) {
-                ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+            particles.forEach(p => {
+                ctx.globalAlpha = p.life / p.maxLife;
                 ctx.fillStyle = p.color;
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
                 ctx.fill();
-            }
+            });
             ctx.globalAlpha = 1;
         }
 
@@ -156,8 +125,8 @@
         function createWolf(x, y) {
             if (wolves.length >= CONFIG.MAX_WOLVES) return;
             wolves.push({
-                x: x - CONFIG.WOLF_SIZE / 2,
-                y: y - CONFIG.WOLF_SIZE / 2,
+                x: x - CONFIG.WOLF_SIZE/2,
+                y: y - CONFIG.WOLF_SIZE/2,
                 dx: random(-1, 1),
                 dy: random(0.5, 1.5),
                 type: 'wolf',
@@ -167,96 +136,59 @@
         }
 
         function createBone(x, y) {
-            bones.push({
-                x: x - CONFIG.BONE_SIZE / 2,
-                y: y - CONFIG.BONE_SIZE / 2
-            });
+            bones.push({ x: x - CONFIG.BONE_SIZE/2, y: y - CONFIG.BONE_SIZE/2 });
             bonesCount++;
         }
 
         // ==================== 更新逻辑 ====================
         function updateEntities(now) {
-            // 更新狼
+            // 狼的生命周期&物理
             for (let i = wolves.length - 1; i >= 0; i--) {
-                const wolf = wolves[i];
-
-                // 生命周期结束
-                if (now - wolf.bornTime > CONFIG.WOLF_LIFETIME) {
-                    spawnParticles(
-                        wolf.x + CONFIG.WOLF_SIZE / 2,
-                        wolf.y + CONFIG.WOLF_SIZE / 2,
-                        '#666666'
-                    );
+                const w = wolves[i];
+                if (now - w.bornTime > CONFIG.WOLF_LIFETIME) {
+                    spawnParticles(w.x + CONFIG.WOLF_SIZE/2, w.y + CONFIG.WOLF_SIZE/2, '#666');
                     wolves.splice(i, 1);
                     wolvesCount--;
                     continue;
                 }
+                w.dy += CONFIG.GRAVITY;
+                w.x += w.dx;
+                w.y += w.dy;
 
-                // 重力
-                wolf.dy += CONFIG.GRAVITY;
-
-                // 移动
-                wolf.x += wolf.dx;
-                wolf.y += wolf.dy;
-
-                // 碰地面（修复了之前的负号bug，现在会向上弹）
-                if (wolf.y + CONFIG.WOLF_SIZE >= canvas.height) {
-                    wolf.y = canvas.height - CONFIG.WOLF_SIZE;
-                    if (wolf.dy > 0) {
-                        wolf.dy = random(CONFIG.MIN_BOUNCE_Y, CONFIG.MAX_BOUNCE_Y); // 正数变负数，向上弹
-                        wolf.dx = (Math.random() > 0.5 ? 1 : -1) *
-                            random(CONFIG.MIN_DX, CONFIG.MAX_DX);
-                        spawnParticles(
-                            wolf.x + CONFIG.WOLF_SIZE / 2,
-                            canvas.height,
-                            '#8B4513'
-                        );
+                // 碰地面（修正弹跳方向）
+                if (w.y + CONFIG.WOLF_SIZE >= canvas.height) {
+                    w.y = canvas.height - CONFIG.WOLF_SIZE;
+                    if (w.dy > 0) {
+                        w.dy = random(CONFIG.MIN_BOUNCE_Y, CONFIG.MAX_BOUNCE_Y);
+                        w.dx = (Math.random() > 0.5 ? 1 : -1) * random(CONFIG.MIN_DX, CONFIG.MAX_DX);
+                        spawnParticles(w.x + CONFIG.WOLF_SIZE/2, canvas.height, '#8B4513');
                     }
                 }
-
-                // 碰天花板
-                if (wolf.y <= 0) {
-                    wolf.y = 0;
-                    wolf.dy = Math.abs(wolf.dy) * CONFIG.BOUNCE_FACTOR;
+                // 碰墙/顶
+                if (w.y <= 0) { w.y = 0; w.dy = Math.abs(w.dy) * CONFIG.BOUNCE_FACTOR; }
+                if (w.x <= 0) { w.x = 0; w.dx = Math.abs(w.dx); }
+                if (w.x + CONFIG.WOLF_SIZE >= canvas.width) {
+                    w.x = canvas.width - CONFIG.WOLF_SIZE;
+                    w.dx = -Math.abs(w.dx);
                 }
-
-                // 碰左右墙
-                if (wolf.x <= 0) {
-                    wolf.x = 0;
-                    wolf.dx = Math.abs(wolf.dx);
-                }
-                if (wolf.x + CONFIG.WOLF_SIZE >= canvas.width) {
-                    wolf.x = canvas.width - CONFIG.WOLF_SIZE;
-                    wolf.dx = -Math.abs(wolf.dx);
-                }
-
-                // 狼撞狼
-                for (let j = i + 1; j < wolves.length; j++) {
+                // 狼互撞
+                for (let j = i+1; j < wolves.length; j++) {
                     const other = wolves[j];
-                    if (isCollide(wolf, other, CONFIG.WOLF_SIZE, CONFIG.WOLF_SIZE)) {
-                        [wolf.type, other.type] = [other.type, wolf.type];
-                        [wolf.dx, other.dx] = [other.dx, wolf.dx];
-                        [wolf.dy, other.dy] = [other.dy, wolf.dy];
-                        spawnParticles(
-                            wolf.x + CONFIG.WOLF_SIZE / 2,
-                            wolf.y + CONFIG.WOLF_SIZE / 2,
-                            '#FF4500'
-                        );
+                    if (isCollide(w, other, CONFIG.WOLF_SIZE, CONFIG.WOLF_SIZE)) {
+                        [w.type, other.type] = [other.type, w.type];
+                        [w.dx, other.dx] = [other.dx, w.dx];
+                        [w.dy, other.dy] = [other.dy, w.dy];
+                        spawnParticles(w.x + CONFIG.WOLF_SIZE/2, w.y + CONFIG.WOLF_SIZE/2, '#FF4500');
                     }
                 }
             }
-
             // 狼吃骨头
-            for (let i = wolves.length - 1; i >= 0; i--) {
-                const wolf = wolves[i];
-                for (let j = bones.length - 1; j >= 0; j--) {
-                    const bone = bones[j];
-                    if (isCollide(wolf, bone, CONFIG.WOLF_SIZE, CONFIG.BONE_SIZE)) {
-                        spawnParticles(
-                            bone.x + CONFIG.BONE_SIZE / 2,
-                            bone.y + CONFIG.BONE_SIZE / 2,
-                            '#FFD700'
-                        );
+            for (let i = wolves.length -1; i >=0; i--) {
+                const w = wolves[i];
+                for (let j = bones.length -1; j >=0; j--) {
+                    const b = bones[j];
+                    if (isCollide(w, b, CONFIG.WOLF_SIZE, CONFIG.BONE_SIZE)) {
+                        spawnParticles(b.x + CONFIG.BONE_SIZE/2, b.y + CONFIG.BONE_SIZE/2, '#FFD700');
                         bones.splice(j, 1);
                         bonesCount--;
                     }
@@ -264,89 +196,89 @@
             }
         }
 
-        // ==================== 绘制 ====================
+        // ==================== 绘制逻辑 ====================
         function drawEntities(ctx) {
             // 画骨头
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            for (const bone of bones) {
-                ctx.font = CONFIG.BONE_SIZE + 'px serif';
-                ctx.fillText(
-                    CONFIG.BONE_EMOJI,
-                    bone.x + CONFIG.BONE_SIZE / 2,
-                    bone.y + CONFIG.BONE_SIZE / 2
-                );
-            }
-
+            bones.forEach(b => {
+                ctx.font = `${CONFIG.BONE_SIZE}px serif`;
+                ctx.fillText(CONFIG.BONE_EMOJI, b.x + CONFIG.BONE_SIZE/2, b.y + CONFIG.BONE_SIZE/2);
+            });
             // 画狼
-            for (const wolf of wolves) {
-                ctx.font = CONFIG.WOLF_SIZE + 'px serif';
-                const emoji = wolf.type === 'wolf'
-                    ? CONFIG.WOLF_EMOJI
-                    : CONFIG.DOG_EMOJI;
+            wolves.forEach(w => {
+                ctx.font = `${CONFIG.WOLF_SIZE}px serif`;
                 ctx.fillText(
-                    emoji,
-                    wolf.x + CONFIG.WOLF_SIZE / 2,
-                    wolf.y + CONFIG.WOLF_SIZE / 2 - 2 // 微调，防止贴地
+                    w.type === 'wolf' ? CONFIG.WOLF_EMOJI : CONFIG.DOG_EMOJI,
+                    w.x + CONFIG.WOLF_SIZE/2,
+                    w.y + CONFIG.WOLF_SIZE/2 - 2 // 微调防贴地
                 );
-            }
+            });
         }
 
-        // ==================== 初始化 ====================
+        // ==================== 初始化 & 事件绑定（核心：解决双狼问题） ====================
+        const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
         const scoreEl = document.getElementById('score');
 
-        function resizeCanvas() {
+        // 画布自适应
+        const resizeCanvas = () => {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-        }
+        };
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
 
+        // 【关键】合并事件：点一下同时触发BGM+生狼，只绑定一次touchstart，彻底避免重复
+        const handleTap = (e) => {
+            e.preventDefault(); // 阻止默认行为，防止touch/click重复触发
+            const rect = canvas.getBoundingClientRect();
+            const x = e.touches ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+            const y = e.touches ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+            
+            playBGM(); // 播BGM（只会触发一次）
+            createWolf(x, y); // 生一只狼（只会触发一次）
+        };
+        // 只绑touchstart，iPad完全够用，加passive:false配合preventDefault
+        canvas.addEventListener('touchstart', handleTap, { passive: false });
+        // 可选：电脑端兼容鼠标点击（不会和touch冲突）
+        canvas.addEventListener('click', handleTap);
+
         // 自动生成骨头
         let lastBoneSpawn = 0;
-        function autoSpawnBone(now) {
-            if (now - lastBoneSpawn > 2000) {
-                if (bones.length < 5) { // 限制屏幕上骨头数量
-                    createBone(
-                        random(CONFIG.BONE_SIZE, canvas.width - CONFIG.BONE_SIZE),
-                        random(CONFIG.BONE_SIZE, canvas.height - CONFIG.BONE_SIZE)
-                    );
-                    lastBoneSpawn = now;
-                }
+        const autoSpawnBone = (now) => {
+            if (now - lastBoneSpawn > 2000 && bones.length < 5) {
+                createBone(
+                    random(CONFIG.BONE_SIZE, canvas.width - CONFIG.BONE_SIZE),
+                    random(CONFIG.BONE_SIZE, canvas.height - CONFIG.BONE_SIZE)
+                );
+                lastBoneSpawn = now;
             }
-        }
+        };
 
         // ==================== 游戏循环 ====================
         let lastTime = performance.now();
-
-        function gameLoop() {
+        const gameLoop = () => {
             const now = performance.now();
-            const deltaTime = (now - lastTime) / 1000;
+            const dt = (now - lastTime) / 1000;
             lastTime = now;
 
-            // 自动生成骨头
             autoSpawnBone(now);
-
-            // 更新
             updateEntities(now);
-            updateParticles(deltaTime);
+            updateParticles(dt);
 
-            // 绘制
             ctx.fillStyle = '#0a0a0a';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             drawEntities(ctx);
             drawParticles(ctx);
 
-            // 更新分数
-            scoreEl.textContent = `\u{1F43A}\u7FA4\uFF1A${wolvesCount} | \u{1F9B4}\u6570\uFF1A${bonesCount}`;
-
+            scoreEl.textContent = `\u{1F43A}群：${wolvesCount} | \u{1F9B4}数：${bonesCount}`;
             requestAnimationFrame(gameLoop);
-        }
+        };
 
         // 启动
         gameLoop();
-        console.log('\u{1F43A} 狼族传说启动成功！点屏幕召唤狼群~');
+        console.log('🐺 狼族传说启动成功！点屏幕召唤狼群~');
     </script>
 </body>
 </html>
