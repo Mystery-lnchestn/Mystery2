@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>狼族传说 🐺</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        body {
+            background: #0a0a0a;
+            overflow: hidden;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            background: #0a0a0a;
+        }
+        #score {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            color: #ffd700;
+            font-size: 18px;
+            font-weight: bold;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
+            z-index: 100;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="score">狼群：0 | 骨头：0</div>
+    <canvas id="game"></canvas>
+
+    <script>
+        // ==================== 配置 ====================
+        const CONFIG = {
+            GRAVITY: 0.18,
+            BOUNCE_FACTOR: 0.7,
+            MIN_BOUNCE_Y: -10,
+            MAX_BOUNCE_Y: -3,
+            MIN_DX: 1,
+            MAX_DX: 4,
+            WOLF_SIZE: 80,
+            BONE_SIZE: 40,
+            MAX_WOLVES: 20,
+            WOLF_LIFETIME: 15000,
+            PARTICLE_COUNT: 12,
+            WOLF_EMOJI: '\u{1F43A}',
+            DOG_EMOJI: '\u{1F436}',
+            BONE_EMOJI: '\u{1F9B4}'
+        };
+
+        // ==================== 工具函数 ====================
+        function random(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function isCollide(a, b, sizeA, sizeB) {
+            return (
+                a.x < b.x + sizeB &&
+                a.x + sizeA > b.x &&
+                a.y < b.y + sizeB &&
+                a.y + sizeA > b.y
+            );
+        }
+
+        // ==================== 粒子系统 ====================
+        const particles = [];
+
+        function spawnParticles(x, y, color) {
+            for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
+                const angle = random(0, Math.PI * 2);
+                const speed = random(1, 3);
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    life: 0.5,
+                    maxLife: 0.5,
+                    size: random(2, 4),
+                    color: color
+                });
+            }
+        }
+
+        function updateParticles(deltaTime) {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.life -= deltaTime;
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vx *= 0.95;
+                p.vy *= 0.95;
+            }
+        }
+
+        function drawParticles(ctx) {
+            for (const p of particles) {
+                ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        // ==================== 实体管理 ====================
+        const wolves = [];
+        const bones = [];
+        let wolvesCount = 0;
+        let bonesCount = 0;
+
+        function createWolf(x, y) {
+            if (wolves.length >= CONFIG.MAX_WOLVES) return;
+            wolves.push({
+                x: x - CONFIG.WOLF_SIZE / 2,
+                y: y - CONFIG.WOLF_SIZE / 2,
+                dx: random(-1, 1),
+                dy: random(0.5, 1.5),
+                type: 'wolf',
+                bornTime: Date.now()
+            });
+            wolvesCount++;
+        }
+
+        function createBone(x, y) {
+            bones.push({
+                x: x - CONFIG.BONE_SIZE / 2,
+                y: y - CONFIG.BONE_SIZE / 2
+            });
+            bonesCount++;
+        }
+
+        function autoSpawnBone(now) {
+            if (bones.length >= 8) return;
+            createBone(
+                random(CONFIG.BONE_SIZE, canvas.width - CONFIG.BONE_SIZE),
+                random(CONFIG.BONE_SIZE, canvas.height - CONFIG.BONE_SIZE)
+            );
+        }
+
+        // ==================== 更新逻辑 ====================
+        function updateEntities(now) {
+            // 更新狼
+            for (let i = wolves.length - 1; i >= 0; i--) {
+                const wolf = wolves[i];
+
+                // 生命周期结束
+                if (now - wolf.bornTime > CONFIG.WOLF_LIFETIME) {
+                    spawnParticles(
+                        wolf.x + CONFIG.WOLF_SIZE / 2,
+                        wolf.y + CONFIG.WOLF_SIZE / 2,
+                        '#666666'
+                    );
+                    wolves.splice(i, 1);
+                    wolvesCount--;
+                    continue;
+                }
+
+                // 重力
+                wolf.dy += CONFIG.GRAVITY;
+
+                // 移动
+                wolf.x += wolf.dx;
+                wolf.y += wolf.dy;
+
+                // 碰地面
+                if (wolf.y + CONFIG.WOLF_SIZE >= canvas.height) {
+                    wolf.y = canvas.height - CONFIG.WOLF_SIZE;
+                    if (wolf.dy > 0) {
+                        wolf.dy = random(CONFIG.MIN_BOUNCE_Y, CONFIG.MAX_BOUNCE_Y);
+                        wolf.dx = (Math.random() > 0.5 ? 1 : -1) *
+                            random(CONFIG.MIN_DX, CONFIG.MAX_DX);
+                        spawnParticles(
+                            wolf.x + CONFIG.WOLF_SIZE / 2,
+                            canvas.height,
+                            '#8B4513'
+                        );
+                    }
+                }
+
+                // 碰天花板
+                if (wolf.y <= 0) {
+                    wolf.y = 0;
+                    wolf.dy = Math.abs(wolf.dy) * CONFIG.BOUNCE_FACTOR;
+                    spawnParticles(wolf.x + CONFIG.WOLF_SIZE / 2, 0, '#888888');
+                }
+
+                // 碰左右墙
+                if (wolf.x <= 0) {
+                    wolf.x = 0;
+                    wolf.dx = Math.abs(wolf.dx);
+                    spawnParticles(0, wolf.y + CONFIG.WOLF_SIZE / 2, '#888888');
+                }
+                if (wolf.x + CONFIG.WOLF_SIZE >= canvas.width) {
+                    wolf.x = canvas.width - CONFIG.WOLF_SIZE;
+                    wolf.dx = -Math.abs(wolf.dx);
+                    spawnParticles(canvas.width, wolf.y + CONFIG.WOLF_SIZE / 2, '#888888');
+                }
+
+                // 狼撞狼
+                for (let j = i + 1; j < wolves.length; j++) {
+                    const other = wolves[j];
+                    if (isCollide(wolf, other, CONFIG.WOLF_SIZE, CONFIG.WOLF_SIZE)) {
+                        [wolf.type, other.type] = [other.type, wolf.type];
+                        [wolf.dx, other.dx] = [other.dx, wolf.dx];
+                        [wolf.dy, other.dy] = [other.dy, wolf.dy];
+                        spawnParticles(
+                            wolf.x + CONFIG.WOLF_SIZE / 2,
+                            wolf.y + CONFIG.WOLF_SIZE / 2,
+                            '#FF4500'
+                        );
+                    }
+                }
+            }
+
+            // 狼吃骨头
+            for (let i = wolves.length - 1; i >= 0; i--) {
+                const wolf = wolves[i];
+                for (let j = bones.length - 1; j >= 0; j--) {
+                    const bone = bones[j];
+                    if (isCollide(wolf, bone, CONFIG.WOLF_SIZE, CONFIG.BONE_SIZE)) {
+                        spawnParticles(
+                            bone.x + CONFIG.BONE_SIZE / 2,
+                            bone.y + CONFIG.BONE_SIZE / 2,
+                            '#FFD700'
+                        );
+                        bones.splice(j, 1);
+                        bonesCount--;
+                    }
+                }
+            }
+        }
+
+        // ==================== 绘制 ====================
+        function drawEntities(ctx) {
+            // 画骨头
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            for (const bone of bones) {
+                ctx.font = CONFIG.BONE_SIZE + 'px serif';
+                ctx.fillText(
+                    CONFIG.BONE_EMOJI,
+                    bone.x + CONFIG.BONE_SIZE / 2,
+                    bone.y + CONFIG.BONE_SIZE / 2
+                );
+            }
+
+            // 画狼
+            for (const wolf of wolves) {
+                ctx.font = CONFIG.WOLF_SIZE + 'px serif';
+                const emoji = wolf.type === 'wolf'
+                    ? CONFIG.WOLF_EMOJI
+                    : CONFIG.DOG_EMOJI;
+                ctx.fillText(
+                    emoji,
+                    wolf.x + CONFIG.WOLF_SIZE / 2,
+                    wolf.y + CONFIG.WOLF_SIZE / 2
+                );
+            }
+        }
+
+        // ==================== 初始化 ====================
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // 触摸/点击生成狼
+        function handleTap(x, y) {
+            createWolf(x, y);
+        }
+
+        canvas.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            handleTap(
+                e.changedTouches[0].clientX - rect.left,
+                e.changedTouches[0].clientY - rect.top
+            );
+        });
+
+        canvas.addEventListener('click', function(e) {
+            const rect = canvas.getBoundingClientRect();
+            handleTap(e.clientX - rect.left, e.clientY - rect.top);
+        });
+
+        // 阻止右键菜单
+        canvas.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+        });
+
+        // ==================== 游戏循环 ====================
+        let lastTime = performance.now();
+        let lastBoneSpawn = 0;
+
+        function gameLoop() {
+            const now = performance.now();
+            const deltaTime = (now - lastTime) / 1000;
+            lastTime = now;
+
+            // 自动生成骨头
+            if (now - lastBoneSpawn > 2000) {
+                autoSpawnBone(now);
+                lastBoneSpawn = now;
+            }
+
+            // 更新
+            updateEntities(now);
+            updateParticles(deltaTime);
+
+            // 绘制
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            drawEntities(ctx);
+            drawParticles(ctx);
+
+            // 更新分数
+            scoreEl.textContent = '\u{1F43A}\u7FA4\uFF1A' + wolvesCount +
+                ' | \u{1F9B4}\u6570\uFF1A' + bonesCount;
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 启动
+        gameLoop();
+        console.log('\u{1F43A} \u72FC\u65CF\u4F20\u8BF4\u5DF2\u542F\u52A8\uFF01\u70B9\u5C4F\u5E55\u53EC\u5524\u72FC\u7FA4~');
+    </script>
+</body>
+</html>
