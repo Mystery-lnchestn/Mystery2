@@ -56,6 +56,27 @@
         // 绑定触摸和点击事件，点一下屏幕就播放BGM
         canvas.addEventListener('touchstart', playBGM);
         canvas.addEventListener('click', playBGM);
+        // 👇 补上：点击/触摸生成狼的逻辑
+        function handleTap(x, y) {
+            createWolf(x, y); // 调用你已有的生狼函数
+        }
+
+        // 绑定点击生成狼的事件（和音频事件共存，点一下既生狼又播音乐）
+        canvas.addEventListener('touchstart', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            handleTap(
+                e.touches[0].clientX - rect.left,
+                e.touches[0].clientY - rect.top
+            );
+        });
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            handleTap(
+                e.clientX - rect.left,
+                e.clientY - rect.top
+            );
+        });
+
 
         // ==================== 配置 ====================
         const CONFIG = {
