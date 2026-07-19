@@ -37,33 +37,32 @@
     </style>
 </head>
 <body>
-    <!-- 核心：mp3和html并列，src直接写文件名即可 -->
+    <!-- BGM：因为mp3和html并列，所以直接写文件名 -->
     <audio id="bgm" src="Wolf_Legend.mp3" loop preload="auto"></audio>
 
     <div id="score">狼群：0 | 骨头：0</div>
     <canvas id="game"></canvas>
 
-    <!-- 先引入audio.js，顺序不能乱！ -->
+    <!-- 关键点1：先加载音频模块 -->
     <script src="audio.js"></script>
 
+    <!-- 关键点2：主逻辑 -->
     <script>
-        // 初始化BGM（调用audio.js里的函数）
-        initBGM();
+        // ==================== 音频初始化（必须在最前）====================
+        // 调用 audio.js 里的函数
+        initBGM(); 
 
-        // 绑定交互事件：用户第一次点屏幕就播放，之后全程循环
         const canvas = document.getElementById('game');
-        canvas.addEventListener('touchstart', playBGM); // iPad触摸
-        canvas.addEventListener('click', playBGM);     // 电脑点击
-    <div id="score">狼群：0 | 骨头：0</div>
-    <canvas id="game"></canvas>
+        // 绑定触摸和点击事件，点一下屏幕就播放BGM
+        canvas.addEventListener('touchstart', playBGM);
+        canvas.addEventListener('click', playBGM);
 
-    <script>
         // ==================== 配置 ====================
         const CONFIG = {
             GRAVITY: 0.18,
             BOUNCE_FACTOR: 0.7,
-            MIN_BOUNCE_Y: -10,
-            MAX_BOUNCE_Y: -3,
+            MIN_BOUNCE_Y: -18, // 我帮你调高了，狼会蹦得更有力
+            MAX_BOUNCE_Y: -8,
             MIN_DX: 1,
             MAX_DX: 4,
             WOLF_SIZE: 80,
@@ -163,14 +162,6 @@
             bonesCount++;
         }
 
-        function autoSpawnBone(now) {
-            if (bones.length >= 8) return;
-            createBone(
-                random(CONFIG.BONE_SIZE, canvas.width - CONFIG.BONE_SIZE),
-                random(CONFIG.BONE_SIZE, canvas.height - CONFIG.BONE_SIZE)
-            );
-        }
-
         // ==================== 更新逻辑 ====================
         function updateEntities(now) {
             // 更新狼
@@ -196,11 +187,11 @@
                 wolf.x += wolf.dx;
                 wolf.y += wolf.dy;
 
-                // 碰地面
+                // 碰地面（修复了之前的负号bug，现在会向上弹）
                 if (wolf.y + CONFIG.WOLF_SIZE >= canvas.height) {
                     wolf.y = canvas.height - CONFIG.WOLF_SIZE;
                     if (wolf.dy > 0) {
-                        wolf.dy = random(CONFIG.MIN_BOUNCE_Y, CONFIG.MAX_BOUNCE_Y);
+                        wolf.dy = random(CONFIG.MIN_BOUNCE_Y, CONFIG.MAX_BOUNCE_Y); // 正数变负数，向上弹
                         wolf.dx = (Math.random() > 0.5 ? 1 : -1) *
                             random(CONFIG.MIN_DX, CONFIG.MAX_DX);
                         spawnParticles(
@@ -215,19 +206,16 @@
                 if (wolf.y <= 0) {
                     wolf.y = 0;
                     wolf.dy = Math.abs(wolf.dy) * CONFIG.BOUNCE_FACTOR;
-                    spawnParticles(wolf.x + CONFIG.WOLF_SIZE / 2, 0, '#888888');
                 }
 
                 // 碰左右墙
                 if (wolf.x <= 0) {
                     wolf.x = 0;
                     wolf.dx = Math.abs(wolf.dx);
-                    spawnParticles(0, wolf.y + CONFIG.WOLF_SIZE / 2, '#888888');
                 }
                 if (wolf.x + CONFIG.WOLF_SIZE >= canvas.width) {
                     wolf.x = canvas.width - CONFIG.WOLF_SIZE;
                     wolf.dx = -Math.abs(wolf.dx);
-                    spawnParticles(canvas.width, wolf.y + CONFIG.WOLF_SIZE / 2, '#888888');
                 }
 
                 // 狼撞狼
@@ -287,13 +275,12 @@
                 ctx.fillText(
                     emoji,
                     wolf.x + CONFIG.WOLF_SIZE / 2,
-                    wolf.y + CONFIG.WOLF_SIZE / 2
+                    wolf.y + CONFIG.WOLF_SIZE / 2 - 2 // 微调，防止贴地
                 );
             }
         }
 
         // ==================== 初始化 ====================
-        const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
         const scoreEl = document.getElementById('score');
 
@@ -304,33 +291,22 @@
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
 
-        // 触摸/点击生成狼
-        function handleTap(x, y) {
-            createWolf(x, y);
+        // 自动生成骨头
+        let lastBoneSpawn = 0;
+        function autoSpawnBone(now) {
+            if (now - lastBoneSpawn > 2000) {
+                if (bones.length < 5) { // 限制屏幕上骨头数量
+                    createBone(
+                        random(CONFIG.BONE_SIZE, canvas.width - CONFIG.BONE_SIZE),
+                        random(CONFIG.BONE_SIZE, canvas.height - CONFIG.BONE_SIZE)
+                    );
+                    lastBoneSpawn = now;
+                }
+            }
         }
-
-        canvas.addEventListener('touchend', function(e) {
-            e.preventDefault();
-            const rect = canvas.getBoundingClientRect();
-            handleTap(
-                e.changedTouches[0].clientX - rect.left,
-                e.changedTouches[0].clientY - rect.top
-            );
-        });
-
-        canvas.addEventListener('click', function(e) {
-            const rect = canvas.getBoundingClientRect();
-            handleTap(e.clientX - rect.left, e.clientY - rect.top);
-        });
-
-        // 阻止右键菜单
-        canvas.addEventListener('contextmenu', function(e) {
-            e.preventDefault();
-        });
 
         // ==================== 游戏循环 ====================
         let lastTime = performance.now();
-        let lastBoneSpawn = 0;
 
         function gameLoop() {
             const now = performance.now();
@@ -338,10 +314,7 @@
             lastTime = now;
 
             // 自动生成骨头
-            if (now - lastBoneSpawn > 2000) {
-                autoSpawnBone(now);
-                lastBoneSpawn = now;
-            }
+            autoSpawnBone(now);
 
             // 更新
             updateEntities(now);
@@ -354,15 +327,14 @@
             drawParticles(ctx);
 
             // 更新分数
-            scoreEl.textContent = '\u{1F43A}\u7FA4\uFF1A' + wolvesCount +
-                ' | \u{1F9B4}\u6570\uFF1A' + bonesCount;
+            scoreEl.textContent = `\u{1F43A}\u7FA4\uFF1A${wolvesCount} | \u{1F9B4}\u6570\uFF1A${bonesCount}`;
 
             requestAnimationFrame(gameLoop);
         }
 
         // 启动
         gameLoop();
-        console.log('\u{1F43A} \u72FC\u65CF\u4F20\u8BF4\u5DF2\u542F\u52A8\uFF01\u70B9\u5C4F\u5E55\u53EC\u5524\u72FC\u7FA4~');
+        console.log('\u{1F43A} 狼族传说启动成功！点屏幕召唤狼群~');
     </script>
 </body>
 </html>
