@@ -37,6 +37,23 @@
     </style>
 </head>
 <body>
+    <!-- 核心：mp3和html并列，src直接写文件名即可 -->
+    <audio id="bgm" src="Wolf_Legend.mp3" loop preload="auto"></audio>
+
+    <div id="score">狼群：0 | 骨头：0</div>
+    <canvas id="game"></canvas>
+
+    <!-- 先引入audio.js，顺序不能乱！ -->
+    <script src="audio.js"></script>
+
+    <script>
+        // 初始化BGM（调用audio.js里的函数）
+        initBGM();
+
+        // 绑定交互事件：用户第一次点屏幕就播放，之后全程循环
+        const canvas = document.getElementById('game');
+        canvas.addEventListener('touchstart', playBGM); // iPad触摸
+        canvas.addEventListener('click', playBGM);     // 电脑点击
     <div id="score">狼群：0 | 骨头：0</div>
     <canvas id="game"></canvas>
 
