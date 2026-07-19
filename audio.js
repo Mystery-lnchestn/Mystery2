@@ -1,22 +1,19 @@
-// audio.js - 仅负责BGM播放，无其他冗余逻辑
 const bgm = document.getElementById('bgm');
-let hasPlayed = false; // 防止重复触发播放
+let hasPlayed = false;
 
-// 初始化BGM：设置音量+预加载
+// 初始化BGM
 function initBGM() {
-    bgm.volume = 0.5; // 音量50%，范围0~1，觉得吵就改小（比如0.3）
-    bgm.preload = 'auto'; // 提前加载音频，减少延迟
+    bgm.volume = 0.5; // 音量50%，可调0-1
+    bgm.preload = 'auto';
 }
 
-// 启动BGM（首次交互时调用）
+// 播放BGM（只会执行一次）
 function playBGM() {
-    if (hasPlayed) return; // 已经播放过就跳过，避免重复调用
+    if (hasPlayed) return;
     hasPlayed = true;
-    bgm.play().catch(err => {
-        console.error('BGM加载失败，检查文件名大小写:', err);
-    });
+    bgm.play().catch(err => console.error('BGM加载失败，检查文件名大小写:', err));
 }
 
-// 挂到全局，不用处理模块导出，完全避开兼容坑
+// 暴露到全局，供index.html调用
 window.initBGM = initBGM;
 window.playBGM = playBGM;
